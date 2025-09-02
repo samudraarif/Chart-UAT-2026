@@ -219,22 +219,39 @@
         const headerH = headerHeight();
         document.documentElement.style.setProperty("--headerH", headerH + "px");
         const availH = Math.max(0, window.innerHeight - headerH);
+
         const M = STATE.measured || { titleH: 18, summaryH: 18, vPad: 16, border: 2, gap: 10, gridPad: 20 };
+
         const minColWidth = 260;
         const maxColsByW = Math.max(1, Math.floor((availW - M.gridPad + M.gap) / (minColWidth + M.gap)));
+
+        // tinggi non-canvas per kartu (judul + summary + padding + border)
         const chromePerCard = M.titleH + M.summaryH + M.vPad + M.border;
 
+        // harus sinkron dengan CSS: padding atas+ bawah grid (10+10) + padding-bottom ekstra (32)
+        const GRID_TOP_BOTTOM = 10 + 10 + 52;
+
+        // buffer kecil untuk menghindari overflow karena pembulatan pixel & font render
+        const SAFE = 6;
+
         let best = { cols: 1, rows: nCharts, chartH: 120 };
+
         for (let cols = maxColsByW; cols >= 1; cols--) {
           const rows = Math.ceil(nCharts / cols);
-          const totalChrome = rows * chromePerCard + (rows - 1) * M.gap + 20;
+
+          const totalChrome = rows * chromePerCard + (rows - 1) * M.gap + GRID_TOP_BOTTOM;
           const usableForCharts = availH - totalChrome;
-          const chartH = Math.floor(usableForCharts / rows);
+
+          // bagi rata tinggi chart per baris + kurangi SAFE agar pasti muat
+          const chartH = Math.floor(usableForCharts / rows) - SAFE;
+
           if (chartH > (best.chartH || 0)) best = { cols, rows, chartH };
         }
+
         best.chartH = Math.max(100, best.chartH);
         return best;
       }
+
 
       function buildContainers() {
         const wrap = document.getElementById("charts");
