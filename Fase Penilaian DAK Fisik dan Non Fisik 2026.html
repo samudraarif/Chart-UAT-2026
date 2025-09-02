@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <title>UAT DAK NON FISIK 2026</title>
+    <script src="https://www.gstatic.com/charts/loader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      h2 {
+        text-align: center;
+        margin: 10px 0 5px;
+      }
+
+      #meta {
+        text-align: center;
+        font-size: 14px;
+        margin-bottom: 10px;
+      }
+
+      #participant-list {
+        text-align: center;
+        font-size: 13px;
+        margin-bottom: 20px;
+        padding: 0 20px;
+        line-height: 1.5;
+        max-height: 60px;
+        overflow: auto;
+      }
+
+      #charts {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        padding: 10px;
+        box-sizing: border-box;
+      }
+
+      .chart-container {
+        width: 100%;
+        height: 280px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .chart-box {
+        width: 100%;
+        height: 230px;
+      }
+
+      .summary {
+        font-size: 12px;
+        text-align: center;
+        margin-top: 4px;
+      }
+
+    </style>
+  </head>
+
+  <body>
+    <h2>UAT Penilaian dan Pembahasan DAK 2026</h2>
+    <div id="meta"></div>
+    <div id="participant-list"></div>
+    <div id="charts"></div>
+
+    <script>
+      google.charts.load("current", { packages: ["corechart"] });
+
+      // --- MODIFIED HEADERS ---
+      const HEADERS = [
+        "A.01 -  Mengaktifkan Fitur Input Verifikasi di Set Global",
+        "A.02 -  Fitur Verifikasi di fase Pembahasan dan Penilaian",
+        "B.01 -  Input Acuan Unit Cost di Fase Pra-Usulan",
+        "B.02 -   Kolom Acuan Unit Cost Muncul ketika User Menambahkan Usulan",
+        "B.03 -  Ubah Referensi Usulan",
+        "B.04 - Filter Rincian",
+        "B.05 -  Melakukan Sync Detail Rincian",
+        "B.06 -   Melakukan Approval via Box Approval",
+        "B.07 -   Melakukan Approval via Tabular Approval",
+        "B.08 -  Download Kertas Kerja dari portal K/L dan Dit"
+      ];
+
+      // --- MODIFIED LABELS ---
+      const LABELS = [
+        "A.01 - Aktifkan Fitur Verifikasi",
+        "A.02 - Fitur Verifikasi di Pembahasan",
+        "B.01 - Input Acuan Unit Cost",
+        "B.02 - Kolom Acuan Unit Cost",
+        "B.03 - Ubah Referensi Usulan",
+        "B.04 - Filter Rincian",
+        "B.05 - Sync Detail Rincian",
+        "B.06 - Approval via Box",
+        "B.07 - Approval via Tabular",
+        "B.08 - Download Kertas Kerja"
+      ];
+
+      // --- MODIFIED SHEET URL ---
+      const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLFUv9xF0ztTIzuXCXDdQw1EXzKw5oSY2QR997eR2ZMCxsnnHm5fGq29PsCyWQ48OAHB0D0_7JNaYF/pub?output=csv";
+
+      function cleanHeader(header) {
+        // Membersihkan spasi berlebih dan karakter baris baru
+        return header.replace(/\s+/g, ' ').replace(/\n/g, '').trim();
+      }
+
+      function drawCharts(data) {
+        const chartsContainer = document.getElementById("charts");
+        chartsContainer.innerHTML = ""; // Hapus chart lama sebelum refresh
+
+        HEADERS.forEach((header, i) => {
+          const counts = { Berhasil: 0, Gagal: 0, Kosong: 0 };
+
+          data.forEach(row => {
+            // Cari key header yang cocok setelah dibersihkan
+            const key = Object.keys(row).find(h => cleanHeader(h) === cleanHeader(header));
+            const val = (row[key] || "").trim().toLowerCase();
+            if (val === "berhasil") counts.Berhasil++;
+            else if (val === "gagal") counts.Gagal++;
+            else counts.Kosong++;
+          });
+
+          const total = counts.Berhasil + counts.Gagal + counts.Kosong;
+          const pctB = total > 0 ? ((counts.Berhasil / total) * 100).toFixed(1) : 0;
+          const pctG = total > 0 ? ((counts.Gagal / total) * 100).toFixed(1) : 0;
+
+          const chartData = google.visualization.arrayToDataTable([
+            ["Status", "Jumlah"],
+            ["Berhasil", counts.Berhasil],
+            ["Gagal", counts.Gagal],
+            ["Kosong", counts.Kosong]
+          ]);
+
+          const container = document.createElement("div");
+          container.className = "chart-container";
+
+          const chartDiv = document.createElement("div");
+          chartDiv.className = "chart-box";
+          chartDiv.id = `chart_${i}`;
+          container.appendChild(chartDiv);
+
+          const summary = document.createElement("div");
+          summary.className = "summary";
+          summary.innerHTML = `Berhasil: ${counts.Berhasil} (${pctB}%) &nbsp; | &nbsp; Gagal: ${counts.Gagal} (${pctG}%)`;
+          container.appendChild(summary);
+
+          chartsContainer.appendChild(container);
+
+          const chart = new google.visualization.PieChart(chartDiv);
+          chart.draw(chartData, {
+            title: LABELS[i],
+            pieHole: 0.3,
+            legend: { position: 'right' },
+            colors: ['#4CAF50', '#F44336', '#9E9E9E'], // Hijau untuk Berhasil, Merah untuk Gagal, Abu-abu untuk Kosong
+            chartArea: { width: '90%', height: '75%' },
+            width: "100%",
+            height: "100%"
+          });
+        });
+      }
+
+      function updateParticipantInfo(data) {
+        const instansiCounts = {};
+        data.forEach(row => {
+          const key = Object.keys(row).find(h => cleanHeader(h) === cleanHeader("Instansi/Unit Kerja"));
+          const instansi = (row[key] || "").trim();
+          if (instansi) {
+            instansiCounts[instansi] = (instansiCounts[instansi] || 0) + 1;
+          }
+        });
+
+        const instansiEntries = Object.entries(instansiCounts).sort((a, b) => a[0].localeCompare(b[0]));
+        const totalParticipant = instansiEntries.reduce((sum, [, count]) => sum + count, 0);
+
+        document.getElementById("meta").innerHTML =
+          `<strong>Total Partisipan:</strong> ${totalParticipant}`;
+
+        document.getElementById("participant-list").innerText =
+          instansiEntries.map(([name, count]) => `${name} (${count})`).join(" | ");
+      }
+
+      function loadDataAndDraw() {
+        Papa.parse(SHEET_CSV_URL, {
+          download: true,
+          header: true,
+          complete: function (results) {
+            const data = results.data;
+            updateParticipantInfo(data);
+            drawCharts(data);
+          },
+          error: function (error) {
+            console.error("Error loading or parsing data:", error);
+            document.getElementById("charts").innerText = "Gagal memuat data. Silakan periksa link spreadsheet atau koneksi internet.";
+          }
+        });
+      }
+
+      google.charts.setOnLoadCallback(() => {
+        loadDataAndDraw();
+        setInterval(loadDataAndDraw, 60 * 1000); // refresh setiap 1 menit
+      });
+    </script>
+  </body>
+
+</html>
