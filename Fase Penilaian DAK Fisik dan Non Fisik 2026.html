@@ -21,12 +21,43 @@
         margin: 0;
         font-family: Arial, sans-serif;
         overflow: hidden;
-        background: #fff;
+        background: url("bg-dark.png") repeat;
+        /* pakai file bg-dark.png */
+        background-size: auto;
+        /* ukuran asli */
+        position: relative;
       }
 
-      h2 {
+      /* overlay supaya teks tetap jelas */
+      body::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.6);
+        /* lapisan gelap */
+        z-index: 0;
+      }
+
+      /* pastikan semua konten di atas overlay */
+      h2,
+      #meta,
+      #participant-list,
+      #charts {
+        position: relative;
+        z-index: 1;
+        color: #fff;
+        /* teks putih biar kontras */
+      }
+
+      /* judul utama rata tengah */
+      #title {
         text-align: center;
-        margin: 10px 0 5px;
+        display: block;
+        width: 100%;
+        margin: 10px auto 5px;
       }
 
       #meta {
@@ -73,6 +104,8 @@
         font-weight: bold;
         text-align: center;
         margin: 0 0 6px;
+        color: #000;
+        /* judul tiap chart tetap hitam */
       }
 
       .chart-box {
@@ -91,6 +124,8 @@
       .tt {
         font-size: 12px;
         line-height: 1.35;
+        color: #000 !important;
+        /* teks tooltip hitam */
       }
 
       .tt strong {
@@ -101,6 +136,16 @@
       .tt .list {
         max-width: 360px;
         white-space: normal;
+      }
+
+      /* override tooltip bawaan google chart */
+      .google-visualization-tooltip {
+        color: #000 !important;
+        background: #fff !important;
+        border: 1px solid rgba(0, 0, 0, 0.15) !important;
+        border-radius: 6px !important;
+        padding: 8px 10px !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
       }
 
     </style>
