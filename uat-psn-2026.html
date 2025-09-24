@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>UAT DAK NON FISIK 2026</title>
+    <title>UAT PSN 2026</title>
     <meta name="viewport"
           content="width=device-width,initial-scale=1,maximum-scale=1">
     <script src="https://www.gstatic.com/charts/loader.js"></script>
@@ -22,26 +22,18 @@
         font-family: Arial, sans-serif;
         overflow: hidden;
         background: url("bg-dark.png") repeat;
-        /* pakai file bg-dark.png */
         background-size: auto;
-        /* ukuran asli */
         position: relative;
       }
 
-      /* overlay supaya teks tetap jelas */
       body::before {
         content: "";
         position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.6);
-        /* lapisan gelap */
+        inset: 0;
+        background: rgba(0, 0, 0, .6);
         z-index: 0;
       }
 
-      /* pastikan semua konten di atas overlay */
       h2,
       #meta,
       #participant-list,
@@ -49,10 +41,8 @@
         position: relative;
         z-index: 1;
         color: #fff;
-        /* teks putih biar kontras */
       }
 
-      /* judul utama rata tengah */
       #title {
         text-align: center;
         display: block;
@@ -105,12 +95,10 @@
         text-align: center;
         margin: 0 0 6px;
         color: #000;
-        /* judul tiap chart tetap hitam */
       }
 
       .chart-box {
         width: 100%;
-        /* height di-set via JS */
       }
 
       .summary {
@@ -120,12 +108,10 @@
         color: #444;
       }
 
-      /* Tooltip html style (agar rapi) */
       .tt {
         font-size: 12px;
         line-height: 1.35;
         color: #000 !important;
-        /* teks tooltip hitam */
       }
 
       .tt strong {
@@ -138,24 +124,21 @@
         white-space: normal;
       }
 
-      /* override tooltip bawaan google chart */
       .google-visualization-tooltip {
         color: #000 !important;
         background: #fff !important;
-        border: 1px solid rgba(0, 0, 0, 0.15) !important;
+        border: 1px solid rgba(0, 0, 0, .15) !important;
         border-radius: 6px !important;
         padding: 8px 10px !important;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, .2) !important;
       }
 
     </style>
   </head>
-
   <body>
     <h2 id="title">UAT Penilaian dan Pembahasan DAK 2026</h2>
     <div id="meta"></div>
     <div id="participant-list"></div>
-
     <div id="charts-frame">
       <div id="charts"></div>
     </div>
@@ -163,130 +146,36 @@
     <script>
       google.charts.load("current", { packages: ["corechart"] });
 
-      // LABEL untuk judul kartu (bebas), HEADERS untuk target kolom di sheet
-      const HEADERS = [
-        "A.01 -  Mengaktifkan Fitur Input Verifikasi di Set Global",
-        "A.02 -  Fitur Verifikasi di fase Pembahasan dan Penilaian",
-        "B.01 -  Input Acuan Unit Cost di Fase Pra-Usulan",
-        "B.02 -   Kolom Acuan Unit Cost Muncul ketika User Menambahkan Usulan",
-        "B.03 -  Ubah Referensi Usulan",
-        "B.04 - Filter Rincian",
-        "B.05 -  Melakukan Sync Detail Rincian",
-        "B.06 -   Melakukan Approval via Box Approval",
-        "B.07 -   Melakukan Approval via Tabular Approval",
-        "B.08 -  Download Kertas Kerja dari portal K/L dan Dit"
-      ];
-      const LABELS = [
-        "A.01 - Aktifkan Fitur Verifikasi", "A.02 - Fitur Verifikasi di Pembahasan",
-        "B.01 - Input Acuan Unit Cost", "B.02 - Kolom Acuan Unit Cost",
-        "B.03 - Ubah Referensi Usulan", "B.04 - Filter Rincian",
-        "B.05 - Sync Detail Rincian", "B.06 - Approval via Box",
-        "B.07 - Approval via Tabular", "B.08 - Download Kertas Kerja"
-      ];
-
-      // GSheet CSV (biarkan sesuai punyamu)
-      const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLFUv9xF0ztTIzuXCXDdQw1EXzKw5oSY2QR997eR2ZMCxsnnHm5fGq29PsCyWQ48OAHB0D0_7JNaYF/pub?output=csv";
-
-      const STATE = { rows: [], charts: [], measured: null, headerKeyCache: new Map() };
-
+      // ====== KONFIG YANG BOLEH DIGANTI ======
+      const SHEET_CSV_URL =
+        "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ9vUB226vtDRMfa_alM52lTh7pbAeXAdJxp_mYbgr6hmLvanAOj8r7hDp8ioCBAEkOvUwjl8nOdyso/pub?output=csv";
       const STATUS_KEYS = ["Berhasil", "Gagal", "Kosong"];
       const COLORS = { Berhasil: "#4CAF50", Gagal: "#F44336", Kosong: "#9E9E9E" };
+      const META_COLS = new Set(["Timestamp", "Nama", "Email", "Instansi/Unit Kerja"]); // akan diabaikan dari chart
 
-      // ==== Normalisasi string & pencocokan kolom ====
-      const norm = s => (s || "")
-        .toString()
-        .replace(/\s+/g, " ")
-        .replace(/\n/g, " ")
-        .trim()
-        .toLowerCase();
+      // ====== STATE ======
+      const STATE = { rows: [], charts: [], measured: null, HEADERS: [], LABELS: [] };
 
-      const collapse = s => norm(s).replace(/\s+/g, ""); // buang semua spasi
-
-      // Ambil prefix kode dari judul (contoh "A.01" dari "A.01 -  ...")
-      const headerCode = h => (h.split("-")[0] || "").trim();
-
-      // Kandidat nama kolom untuk "Instansi"
-      const INST_CANDIDATES = [
-        "Instansi/Unit Kerja",
-        "Instansi / Unit Kerja",
-        "Instansi",
-        "Unit Kerja",
-        "Instansi/ Unit Kerja",
-        "Instansi - Unit Kerja"
-      ].map(norm);
-
-      function cleanHeader(header) { return header.replace(/\s+/g, ' ').replace(/\n/g, '').trim(); }
-
-      // Temukan kunci kolom di sebuah row untuk header target:
-      // 1) match bersih penuh
-      // 2) match prefix kode (A.01, B.03, dsb)
-      // 3) match longgar (abaikan spasi ganda)
-      function findHeaderKey(row, desiredHeader) {
-        const cacheKey = desiredHeader + "||" + Object.keys(row).join("|");
-        if (STATE.headerKeyCache.has(cacheKey)) return STATE.headerKeyCache.get(cacheKey);
-
-        const keys = Object.keys(row);
-        const desiredNorm = norm(desiredHeader);
-        const desiredCollapse = collapse(desiredHeader);
-        const code = headerCode(desiredHeader).toLowerCase();
-
-        // 1) exact-normalized match
-        let found = keys.find(k => norm(k) === desiredNorm);
-        if (found) { STATE.headerKeyCache.set(cacheKey, found); return found; }
-
-        // 2) prefix-kode match (contoh: kolom "A.01 – ..." atau "A.01 ..." atau "A.01—")
-        if (code) {
-          found = keys.find(k => norm(k).startsWith(code));
-          if (found) { STATE.headerKeyCache.set(cacheKey, found); return found; }
-        }
-
-        // 3) loose match (abaikan spasi/variasi kecil)
-        found = keys.find(k => collapse(k) === desiredCollapse);
-        if (found) { STATE.headerKeyCache.set(cacheKey, found); return found; }
-
-        // 4) fallback: cari kolom yang mengandung kode di mana saja
-        if (code) {
-          found = keys.find(k => norm(k).includes(code));
-          if (found) { STATE.headerKeyCache.set(cacheKey, found); return found; }
-        }
-
-        STATE.headerKeyCache.set(cacheKey, null);
-        return null;
-      }
-
-      // Ambil nama instansi dari row dengan toleransi variasi header
+      // ====== UTIL ======
+      function cleanHeader(h) { return (h || "").toString().replace(/\s+/g, " ").replace(/\n/g, " ").trim(); }
+      function baseName(h) { return cleanHeader(h).replace(/\.\d+$/, ""); } // buang akhiran .1, .2, dll
+      function isCatatan(h) { return /catatan/i.test(h); }
+      function isMeta(h) { return META_COLS.has(baseName(h)); }
       function getInstansi(row) {
-        const keys = Object.keys(row);
-        // Cari kandidat terbaik
-        let key = keys.find(k => INST_CANDIDATES.includes(norm(k)));
-        if (!key) {
-          // fallback: temukan yang mengandung kata "instansi" atau "unit kerja"
-          key = keys.find(k => /\b(instansi|unit\s*kerja)\b/i.test(k));
-        }
-        const val = key ? (row[key] || "").toString().trim() : "";
-        return val || "(Tidak tercatat)";
+        const key = Object.keys(row).find(h => baseName(h) === "Instansi/Unit Kerja");
+        return ((row?.[key] ?? "") + "").trim() || "(Tidak tercatat)";
       }
-
-      // Pemetaan alias status → 3 kategori
-      const STATUS_ALIASES = {
-        "berhasil": "Berhasil", "sukses": "Berhasil", "ok": "Berhasil", "ya": "Berhasil", "done": "Berhasil",
-        "gagal": "Gagal", "tidak": "Gagal", "tdk": "Gagal", "fail": "Gagal", "error": "Gagal", "belum": "Gagal",
-        "": "Kosong", "-": "Kosong", "kosong": "Kosong", "n/a": "Kosong", "na": "Kosong", "null": "Kosong"
-      };
-      function normalizeStatus(raw) {
-        const s = norm(raw);
-        if (STATUS_ALIASES.hasOwnProperty(s)) return STATUS_ALIASES[s];
-        // default: jika bukan "berhasil" → cek kata kunci; selain itu anggap "Kosong"
-        if (/berhasil|sukses|ok|ya|done/i.test(raw)) return "Berhasil";
-        if (/gagal|tidak|fail|error|belum/i.test(raw)) return "Gagal";
-        return raw ? "Kosong" : "Kosong";
+      function makeLabelFromHeader(h) {
+        const m = cleanHeader(h).match(/^\s*([A-Z]\.\d+)\s*-\s*(.*)$/);
+        let core = m ? m[2] : cleanHeader(h);
+        core = core.replace(/\s+/g, " ").trim();
+        if (core.length > 38) core = core.slice(0, 35) + "…";
+        return (m ? (m[1] + " - ") : "") + core;
       }
-
       function headerHeight() {
         const ids = ["title", "meta", "participant-list"];
         return ids.reduce((h, id) => { const el = document.getElementById(id); return h + (el ? el.getBoundingClientRect().height : 0); }, 0) + 6;
       }
-
       function measureCardChrome() {
         const sample = document.querySelector(".chart-container");
         if (!sample) return { titleH: 18, summaryH: 18, vPad: 16, border: 2, gap: 10, gridPad: 20 };
@@ -300,42 +189,36 @@
         const gap = 10, gridPad = 20;
         return { titleH, summaryH, vPad, border, gap, gridPad };
       }
-
       function computeLayout(nCharts) {
         const availW = window.innerWidth;
         const headerH = headerHeight();
         document.documentElement.style.setProperty("--headerH", headerH + "px");
         const availH = Math.max(0, window.innerHeight - headerH);
-
         const M = STATE.measured || { titleH: 18, summaryH: 18, vPad: 16, border: 2, gap: 10, gridPad: 20 };
-
         const minColWidth = 260;
         const maxColsByW = Math.max(1, Math.floor((availW - M.gridPad + M.gap) / (minColWidth + M.gap)));
-
         const chromePerCard = M.titleH + M.summaryH + M.vPad + M.border;
         const GRID_TOP_BOTTOM = 10 + 10 + 52;
         const SAFE = 6;
-
         let best = { cols: 1, rows: nCharts, chartH: 120 };
-
         for (let cols = maxColsByW; cols >= 1; cols--) {
           const rows = Math.ceil(nCharts / cols);
           const totalChrome = rows * chromePerCard + (rows - 1) * M.gap + GRID_TOP_BOTTOM;
-          const usableForCharts = availH - totalChrome;
-          const chartH = Math.floor(usableForCharts / rows) - SAFE;
+          const usable = availH - totalChrome;
+          const chartH = Math.floor(usable / rows) - SAFE;
           if (chartH > (best.chartH || 0)) best = { cols, rows, chartH };
         }
-
         best.chartH = Math.max(100, best.chartH);
         return best;
       }
 
+      // ====== BUILD UI ======
       function buildContainers() {
         const wrap = document.getElementById("charts");
         wrap.innerHTML = ""; STATE.charts = [];
-        HEADERS.forEach((_, i) => {
+        STATE.HEADERS.forEach((h, i) => {
           const card = document.createElement("div"); card.className = "chart-container";
-          const ttl = document.createElement("div"); ttl.className = "chart-title"; ttl.textContent = LABELS[i]; card.appendChild(ttl);
+          const ttl = document.createElement("div"); ttl.className = "chart-title"; ttl.textContent = STATE.LABELS[i]; card.appendChild(ttl);
           const box = document.createElement("div"); box.className = "chart-box"; box.id = `chart_${i}`; card.appendChild(box);
           const sum = document.createElement("div"); sum.className = "summary"; sum.id = `summary_${i}`; card.appendChild(sum);
           wrap.appendChild(card);
@@ -344,38 +227,30 @@
         STATE.measured = measureCardChrome();
       }
 
-      // Tooltip HTML breakdown per instansi
       function makeTooltip(status, total, breakdownMap) {
         const entries = Object.entries(breakdownMap).sort((a, b) => b[1] - a[1]);
         const list = entries.map(([name, c]) => `${name} (${c})`).join(", ");
         const title = `${status}: ${total}`;
-        return `
-          <div class="tt">
-            <strong>${title}</strong>
-            <div class="list">${list || "-"}</div>
-          </div>`;
+        return `<div class="tt"><strong>${title}</strong><div class="list">${list || "-"}</div></div>`;
       }
 
       function drawAllCharts() {
         const rows = STATE.rows;
         if (!STATE.measured) STATE.measured = measureCardChrome();
-
-        const layout = computeLayout(HEADERS.length);
+        const layout = computeLayout(STATE.HEADERS.length);
         document.getElementById("charts").style.setProperty("--cols", layout.cols);
         document.querySelectorAll(".chart-box").forEach(el => { el.style.height = layout.chartH + "px"; });
 
-        HEADERS.forEach((header, i) => {
-          // aggregator
+        STATE.HEADERS.forEach((header, i) => {
           const counts = { Berhasil: 0, Gagal: 0, Kosong: 0 };
           const byInstansi = { Berhasil: {}, Gagal: {}, Kosong: {} };
 
           rows.forEach(row => {
-            const key = findHeaderKey(row, header);
-            const raw = key ? (row[key] ?? "") : "";
-            const status = normalizeStatus(raw);
-            counts[status]++;
-
-            const inst = getInstansi(row);
+            // cari key yang ekivalen dengan header (mengabaikan ".1" dll)
+            const key = Object.keys(row).find(h => baseName(h) === baseName(header));
+            const raw = ((row?.[key] ?? "") + "").trim().toLowerCase();
+            const status = raw === "berhasil" ? "Berhasil" : raw === "gagal" ? "Gagal" : "Kosong";
+            counts[status]++; const inst = getInstansi(row);
             byInstansi[status][inst] = (byInstansi[status][inst] || 0) + 1;
           });
 
@@ -383,22 +258,17 @@
           const pctB = total ? ((counts.Berhasil / total) * 100).toFixed(1) : 0;
           const pctG = total ? ((counts.Gagal / total) * 100).toFixed(1) : 0;
 
-          // DataTable dengan tooltip HTML
           const dt = new google.visualization.DataTable();
           dt.addColumn('string', 'Status');
           dt.addColumn('number', 'Jumlah');
           dt.addColumn({ type: 'string', role: 'tooltip', p: { html: true } });
-
-          STATUS_KEYS.forEach(st => {
-            const tip = makeTooltip(st, counts[st], byInstansi[st]);
-            dt.addRow([st, counts[st], tip]);
+          ["Berhasil", "Gagal", "Kosong"].forEach(st => {
+            dt.addRow([st, counts[st], makeTooltip(st, counts[st], byInstansi[st])]);
           });
 
           const options = {
             legend: { position: 'bottom', alignment: 'center', textStyle: { fontSize: 11 } },
-            slices: {
-              0: { color: COLORS.Berhasil }, 1: { color: COLORS.Gagal }, 2: { color: COLORS.Kosong }
-            },
+            slices: { 0: { color: COLORS.Berhasil }, 1: { color: COLORS.Gagal }, 2: { color: COLORS.Kosong } },
             chartArea: { left: '6%', top: '6%', width: '88%', height: '78%' },
             tooltip: { isHtml: true },
           };
@@ -406,7 +276,6 @@
           const chart = new google.visualization.PieChart(document.getElementById(`chart_${i}`));
           chart.draw(dt, options);
 
-          // Summary bawah kartu
           const sumEl = document.getElementById(`summary_${i}`);
           sumEl.innerHTML = `Berhasil: ${counts.Berhasil} (${pctB}%) &nbsp; | &nbsp; Gagal: ${counts.Gagal} (${pctG}%)`;
         });
@@ -415,21 +284,39 @@
       function updateParticipantInfo(data) {
         const instansiCounts = {};
         data.forEach(row => {
-          const instansi = getInstansi(row);
-          if (instansi) instansiCounts[instansi] = (instansiCounts[instansi] || 0) + 1;
+          const inst = getInstansi(row);
+          if (inst) instansiCounts[inst] = (instansiCounts[inst] || 0) + 1;
         });
-        const instansiEntries = Object.entries(instansiCounts).sort((a, b) => a[0].localeCompare(b[0]));
-        const totalParticipant = instansiEntries.reduce((s, [, c]) => s + c, 0);
-        document.getElementById("meta").innerHTML = `<strong>Total Partisipan:</strong> ${totalParticipant}`;
-        document.getElementById("participant-list").innerText = instansiEntries.map(([n, c]) => `${n} (${c})`).join(" | ");
+        const entries = Object.entries(instansiCounts).sort((a, b) => a[0].localeCompare(b[0]));
+        const total = entries.reduce((s, [, c]) => s + c, 0);
+        document.getElementById("meta").innerHTML = `<strong>Total Partisipan:</strong> ${total}`;
+        document.getElementById("participant-list").innerText = entries.map(([n, c]) => `${n} (${c})`).join(" | ");
+      }
+
+      // ====== INTI: Derive kolom chart dari CSV ======
+      function deriveHeadersFromRows(rows) {
+        if (!rows || !rows.length) return [];
+        const seen = new Set();
+        const result = [];
+        Object.keys(rows[0]).forEach(h => {
+          const b = baseName(h);
+          if (!b || isMeta(b) || isCatatan(b)) return; // skip meta/catatan
+          if (seen.has(b)) return; // dedupe .1, .2, ...
+          seen.add(b);
+          result.push(b);
+        });
+        return result;
       }
 
       function loadDataAndDraw() {
         Papa.parse(SHEET_CSV_URL, {
           download: true, header: true, skipEmptyLines: true,
           complete: function (res) {
-            // filter baris kosong total
-            STATE.rows = (res.data || []).filter(r => Object.values(r).some(v => (v ?? "").toString().trim() !== ""));
+            STATE.rows = res.data || [];
+            // derive HEADERS & LABELS dari CSV
+            STATE.HEADERS = deriveHeadersFromRows(STATE.rows);
+            STATE.LABELS = STATE.HEADERS.map(makeLabelFromHeader);
+
             updateParticipantInfo(STATE.rows);
             buildContainers();
             drawAllCharts();
@@ -445,10 +332,7 @@
       window.addEventListener("resize", () => requestAnimationFrame(redraw));
       window.addEventListener("orientationchange", () => setTimeout(() => requestAnimationFrame(redraw), 200));
 
-      google.charts.setOnLoadCallback(() => {
-        loadDataAndDraw();
-      });
+      google.charts.setOnLoadCallback(loadDataAndDraw);
     </script>
-
   </body>
 </html>
