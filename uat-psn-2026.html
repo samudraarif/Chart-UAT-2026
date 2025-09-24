@@ -20,12 +20,14 @@
         height: 100%;
         margin: 0;
         font-family: Arial, sans-serif;
-        overflow: hidden;
+        /* overflow: hidden; */
+        /* ★ dihapus supaya halaman boleh scroll */
         background: url("bg-dark.png") repeat;
         background-size: auto;
         position: relative;
       }
 
+      /* overlay gelap */
       body::before {
         content: "";
         position: absolute;
@@ -66,10 +68,14 @@
         overflow: auto;
       }
 
+      /* Panel konten yang bisa discroll */
       #charts-frame {
         width: 100vw;
         height: calc(100vh - var(--headerH, 0px));
-        overflow: hidden;
+        overflow: auto;
+        /* ★ biar bisa scroll kalau konten tinggi */
+        -webkit-overflow-scrolling: touch;
+        /* ★ momentum scroll di iOS */
       }
 
       #charts {
@@ -146,25 +152,27 @@
     <script>
       google.charts.load("current", { packages: ["corechart"] });
 
-      // ====== KONFIG YANG BOLEH DIGANTI ======
+      // ====== KONFIG ======
       const SHEET_CSV_URL =
         "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ9vUB226vtDRMfa_alM52lTh7pbAeXAdJxp_mYbgr6hmLvanAOj8r7hDp8ioCBAEkOvUwjl8nOdyso/pub?output=csv";
       const STATUS_KEYS = ["Berhasil", "Gagal", "Kosong"];
       const COLORS = { Berhasil: "#4CAF50", Gagal: "#F44336", Kosong: "#9E9E9E" };
-      const META_COLS = new Set(["Timestamp", "Nama", "Email", "Instansi/Unit Kerja"]); // akan diabaikan dari chart
+      const META_COLS = new Set(["Timestamp", "Nama", "Email", "Instansi/Unit Kerja"]);
 
       // ====== STATE ======
       const STATE = { rows: [], charts: [], measured: null, HEADERS: [], LABELS: [] };
 
       // ====== UTIL ======
-      function cleanHeader(h) { return (h || "").toString().replace(/\s+/g, " ").replace(/\n/g, " ").trim(); }
-      function baseName(h) { return cleanHeader(h).replace(/\.\d+$/, ""); } // buang akhiran .1, .2, dll
-      function isCatatan(h) { return /catatan/i.test(h); }
-      function isMeta(h) { return META_COLS.has(baseName(h)); }
+      const cleanHeader = h => (h || "").toString().replace(/\s+/g, " ").replace(/\n/g, " ").trim();
+      const baseName = h => cleanHeader(h).replace(/\.\d+$/, "");
+      const isCatatan = h => /catatan/i.test(h);
+      const isMeta = h => META_COLS.has(baseName(h));
+
       function getInstansi(row) {
         const key = Object.keys(row).find(h => baseName(h) === "Instansi/Unit Kerja");
         return ((row?.[key] ?? "") + "").trim() || "(Tidak tercatat)";
       }
+
       function makeLabelFromHeader(h) {
         const m = cleanHeader(h).match(/^\s*([A-Z]\.\d+)\s*-\s*(.*)$/);
         let core = m ? m[2] : cleanHeader(h);
@@ -172,10 +180,12 @@
         if (core.length > 38) core = core.slice(0, 35) + "…";
         return (m ? (m[1] + " - ") : "") + core;
       }
+
       function headerHeight() {
         const ids = ["title", "meta", "participant-list"];
         return ids.reduce((h, id) => { const el = document.getElementById(id); return h + (el ? el.getBoundingClientRect().height : 0); }, 0) + 6;
       }
+
       function measureCardChrome() {
         const sample = document.querySelector(".chart-container");
         if (!sample) return { titleH: 18, summaryH: 18, vPad: 16, border: 2, gap: 10, gridPad: 20 };
@@ -186,9 +196,9 @@
         const summaryH = summary ? Math.ceil(summary.getBoundingClientRect().height) : 0;
         const vPad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
         const border = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
-        const gap = 10, gridPad = 20;
-        return { titleH, summaryH, vPad, border, gap, gridPad };
+        return { titleH, summaryH, vPad, border, gap: 10, gridPad: 20 };
       }
+
       function computeLayout(nCharts) {
         const availW = window.innerWidth;
         const headerH = headerHeight();
@@ -230,28 +240,31 @@
       function makeTooltip(status, total, breakdownMap) {
         const entries = Object.entries(breakdownMap).sort((a, b) => b[1] - a[1]);
         const list = entries.map(([name, c]) => `${name} (${c})`).join(", ");
-        const title = `${status}: ${total}`;
-        return `<div class="tt"><strong>${title}</strong><div class="list">${list || "-"}</div></div>`;
+        return `<div class="tt"><strong>${status}: ${total}</strong><div class="list">${list || "-"}</div></div>`;
       }
 
       function drawAllCharts() {
         const rows = STATE.rows;
         if (!STATE.measured) STATE.measured = measureCardChrome();
+
         const layout = computeLayout(STATE.HEADERS.length);
         document.getElementById("charts").style.setProperty("--cols", layout.cols);
-        document.querySelectorAll(".chart-box").forEach(el => { el.style.height = layout.chartH + "px"; });
+
+        // kamu bisa tweak tinggi kartu di sini (mis. MIN/MAX/BOOST)
+        const MIN_H = 180, MAX_H = 420, BOOST = 0;
+        const targetH = Math.min(MAX_H, Math.max(MIN_H, layout.chartH + BOOST));
+        document.querySelectorAll(".chart-box").forEach(el => { el.style.height = targetH + "px"; });
 
         STATE.HEADERS.forEach((header, i) => {
           const counts = { Berhasil: 0, Gagal: 0, Kosong: 0 };
           const byInstansi = { Berhasil: {}, Gagal: {}, Kosong: {} };
 
           rows.forEach(row => {
-            // cari key yang ekivalen dengan header (mengabaikan ".1" dll)
             const key = Object.keys(row).find(h => baseName(h) === baseName(header));
             const raw = ((row?.[key] ?? "") + "").trim().toLowerCase();
-            const status = raw === "berhasil" ? "Berhasil" : raw === "gagal" ? "Gagal" : "Kosong";
-            counts[status]++; const inst = getInstansi(row);
-            byInstansi[status][inst] = (byInstansi[status][inst] || 0) + 1;
+            const st = raw === "berhasil" ? "Berhasil" : raw === "gagal" ? "Gagal" : "Kosong";
+            counts[st]++; const inst = getInstansi(row);
+            byInstansi[st][inst] = (byInstansi[st][inst] || 0) + 1;
           });
 
           const total = counts.Berhasil + counts.Gagal + counts.Kosong;
@@ -262,9 +275,7 @@
           dt.addColumn('string', 'Status');
           dt.addColumn('number', 'Jumlah');
           dt.addColumn({ type: 'string', role: 'tooltip', p: { html: true } });
-          ["Berhasil", "Gagal", "Kosong"].forEach(st => {
-            dt.addRow([st, counts[st], makeTooltip(st, counts[st], byInstansi[st])]);
-          });
+          ["Berhasil", "Gagal", "Kosong"].forEach(st => dt.addRow([st, counts[st], makeTooltip(st, counts[st], byInstansi[st])]));
 
           const options = {
             legend: { position: 'bottom', alignment: 'center', textStyle: { fontSize: 11 } },
@@ -276,8 +287,8 @@
           const chart = new google.visualization.PieChart(document.getElementById(`chart_${i}`));
           chart.draw(dt, options);
 
-          const sumEl = document.getElementById(`summary_${i}`);
-          sumEl.innerHTML = `Berhasil: ${counts.Berhasil} (${pctB}%) &nbsp; | &nbsp; Gagal: ${counts.Gagal} (${pctG}%)`;
+          document.getElementById(`summary_${i}`).innerHTML =
+            `Berhasil: ${counts.Berhasil} (${pctB}%) &nbsp; | &nbsp; Gagal: ${counts.Gagal} (${pctG}%)`;
         });
       }
 
@@ -293,17 +304,15 @@
         document.getElementById("participant-list").innerText = entries.map(([n, c]) => `${n} (${c})`).join(" | ");
       }
 
-      // ====== INTI: Derive kolom chart dari CSV ======
+      // ====== derive kolom dari CSV ======
       function deriveHeadersFromRows(rows) {
         if (!rows || !rows.length) return [];
-        const seen = new Set();
-        const result = [];
+        const seen = new Set(), result = [];
         Object.keys(rows[0]).forEach(h => {
           const b = baseName(h);
-          if (!b || isMeta(b) || isCatatan(b)) return; // skip meta/catatan
-          if (seen.has(b)) return; // dedupe .1, .2, ...
-          seen.add(b);
-          result.push(b);
+          if (!b || isMeta(b) || isCatatan(b)) return;
+          if (seen.has(b)) return;
+          seen.add(b); result.push(b);
         });
         return result;
       }
@@ -313,10 +322,8 @@
           download: true, header: true, skipEmptyLines: true,
           complete: function (res) {
             STATE.rows = res.data || [];
-            // derive HEADERS & LABELS dari CSV
             STATE.HEADERS = deriveHeadersFromRows(STATE.rows);
             STATE.LABELS = STATE.HEADERS.map(makeLabelFromHeader);
-
             updateParticipantInfo(STATE.rows);
             buildContainers();
             drawAllCharts();
