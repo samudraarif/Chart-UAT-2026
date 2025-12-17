@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>UAT KRISNA SBSN</title>
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,maximum-scale=1">
+    <script src="https://www.gstatic.com/charts/loader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <style>
+      :root {
+        --gap: 10px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        font-family: Arial, sans-serif;
+        /* overflow: hidden; */
+        /* ★ dihapus supaya halaman boleh scroll */
+        background: url("bg-dark.png") repeat;
+        background-size: auto;
+        position: relative;
+      }
+
+      /* overlay gelap */
+      body::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, .6);
+        z-index: 0;
+      }
+
+      h2,
+      #meta,
+      #participant-list,
+      #charts {
+        position: relative;
+        z-index: 1;
+        color: #fff;
+      }
+
+      #title {
+        text-align: center;
+        display: block;
+        width: 100%;
+        margin: 10px auto 5px;
+      }
+
+      #meta {
+        text-align: center;
+        font-size: 14px;
+        margin-bottom: 6px;
+      }
+
+      #participant-list {
+        text-align: center;
+        font-size: 13px;
+        margin-bottom: 8px;
+        padding: 0 20px;
+        line-height: 1.4;
+        max-height: 56px;
+        overflow: auto;
+      }
+
+      /* Panel konten yang bisa discroll */
+      #charts-frame {
+        width: 100vw;
+        height: calc(100vh - var(--headerH, 0px));
+        overflow: auto;
+        /* ★ biar bisa scroll kalau konten tinggi */
+        -webkit-overflow-scrolling: touch;
+        /* ★ momentum scroll di iOS */
+      }
+
+      #charts {
+        display: grid;
+        gap: var(--gap);
+        padding: var(--gap);
+        grid-template-columns: repeat(var(--cols, 4), 1fr);
+      }
+
+      .chart-container {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        background: #fafafa;
+        border: 1px solid #eee;
+        border-radius: 10px;
+        padding: 8px;
+      }
+
+      .chart-title {
+        font-size: 13px;
+        font-weight: bold;
+        text-align: center;
+        margin: 0 0 6px;
+        color: #000;
+      }
+
+      .chart-box {
+        width: 100%;
+      }
+
+      .summary {
+        font-size: 12px;
+        text-align: center;
+        margin-top: 6px;
+        color: #444;
+      }
+
+      .tt {
+        font-size: 12px;
+        line-height: 1.35;
+        color: #000 !important;
+      }
+
+      .tt strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .tt .list {
+        max-width: 360px;
+        white-space: normal;
+      }
+
+      .google-visualization-tooltip {
+        color: #000 !important;
+        background: #fff !important;
+        border: 1px solid rgba(0, 0, 0, .15) !important;
+        border-radius: 6px !important;
+        padding: 8px 10px !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, .2) !important;
+      }
+
+    </style>
+  </head>
+  <body>
+    <h2 id="title">UAT KRISNA SBSN</h2>
+    <div id="meta"></div>
+    <div id="participant-list"></div>
+    <div id="charts-frame">
+      <div id="charts"></div>
+    </div>
+
+    <script>
+      google.charts.load("current", { packages: ["corechart"] });
+
+      // ====== KONFIG ======
+      const SHEET_CSV_URL =
+        "https://docs.google.com/spreadsheets/d/e/2PACX-1vTSBOHilax7spl2oFJiYD5sZayV0GlS5ZIkMfJnUpEjVy-cIhnfyzS8-ObEy_XQdvq5yrf3mnpySgA2/pub?output=csv";
+      const STATUS_KEYS = ["Berhasil", "Gagal", "Kosong"];
+      const COLORS = { Berhasil: "#4CAF50", Gagal: "#F44336", Kosong: "#9E9E9E" };
+      const META_COLS = new Set(["Timestamp", "Nama", "Email", "Instansi/Unit Kerja"]);
+
+      // ====== STATE ======
+      const STATE = { rows: [], charts: [], measured: null, HEADERS: [], LABELS: [] };
+
+      // ====== UTIL ======
+      const cleanHeader = h => (h || "").toString().replace(/\s+/g, " ").replace(/\n/g, " ").trim();
+      const baseName = h => cleanHeader(h).replace(/\.\d+$/, "");
+      const isCatatan = h => /catatan/i.test(h);
+      const isMeta = h => META_COLS.has(baseName(h));
+
+      function getInstansi(row) {
+        const key = Object.keys(row).find(h => baseName(h) === "Instansi/Unit Kerja");
+        return ((row?.[key] ?? "") + "").trim() || "(Tidak tercatat)";
+      }
+
+      function makeLabelFromHeader(h) {
+        const m = cleanHeader(h).match(/^\s*([A-Z]\.\d+)\s*-\s*(.*)$/);
+        let core = m ? m[2] : cleanHeader(h);
+        core = core.replace(/\s+/g, " ").trim();
+        if (core.length > 38) core = core.slice(0, 35) + "…";
+        return (m ? (m[1] + " - ") : "") + core;
+      }
+
+      function headerHeight() {
+        const ids = ["title", "meta", "participant-list"];
+        return ids.reduce((h, id) => { const el = document.getElementById(id); return h + (el ? el.getBoundingClientRect().height : 0); }, 0) + 6;
+      }
+
+      function measureCardChrome() {
+        const sample = document.querySelector(".chart-container");
+        if (!sample) return { titleH: 18, summaryH: 18, vPad: 16, border: 2, gap: 10, gridPad: 20 };
+        const title = sample.querySelector(".chart-title");
+        const summary = sample.querySelector(".summary");
+        const cs = getComputedStyle(sample);
+        const titleH = title ? Math.ceil(title.getBoundingClientRect().height) : 0;
+        const summaryH = summary ? Math.ceil(summary.getBoundingClientRect().height) : 0;
+        const vPad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+        const border = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+        return { titleH, summaryH, vPad, border, gap: 10, gridPad: 20 };
+      }
+
+      function computeLayout(nCharts) {
+        const availW = window.innerWidth;
+        const headerH = headerHeight();
+        document.documentElement.style.setProperty("--headerH", headerH + "px");
+        const availH = Math.max(0, window.innerHeight - headerH);
+        const M = STATE.measured || { titleH: 18, summaryH: 18, vPad: 16, border: 2, gap: 10, gridPad: 20 };
+        const minColWidth = 260;
+        const maxColsByW = Math.max(1, Math.floor((availW - M.gridPad + M.gap) / (minColWidth + M.gap)));
+        const chromePerCard = M.titleH + M.summaryH + M.vPad + M.border;
+        const GRID_TOP_BOTTOM = 10 + 10 + 52;
+        const SAFE = 6;
+        let best = { cols: 1, rows: nCharts, chartH: 120 };
+        for (let cols = maxColsByW; cols >= 1; cols--) {
+          const rows = Math.ceil(nCharts / cols);
+          const totalChrome = rows * chromePerCard + (rows - 1) * M.gap + GRID_TOP_BOTTOM;
+          const usable = availH - totalChrome;
+          const chartH = Math.floor(usable / rows) - SAFE;
+          if (chartH > (best.chartH || 0)) best = { cols, rows, chartH };
+        }
+        best.chartH = Math.max(100, best.chartH);
+        return best;
+      }
+
+      // ====== BUILD UI ======
+      function buildContainers() {
+        const wrap = document.getElementById("charts");
+        wrap.innerHTML = ""; STATE.charts = [];
+        STATE.HEADERS.forEach((h, i) => {
+          const card = document.createElement("div"); card.className = "chart-container";
+          const ttl = document.createElement("div"); ttl.className = "chart-title"; ttl.textContent = STATE.LABELS[i]; card.appendChild(ttl);
+          const box = document.createElement("div"); box.className = "chart-box"; box.id = `chart_${i}`; card.appendChild(box);
+          const sum = document.createElement("div"); sum.className = "summary"; sum.id = `summary_${i}`; card.appendChild(sum);
+          wrap.appendChild(card);
+          STATE.charts.push({ boxId: box.id, sumId: sum.id });
+        });
+        STATE.measured = measureCardChrome();
+      }
+
+      function makeTooltip(status, total, breakdownMap) {
+        const entries = Object.entries(breakdownMap).sort((a, b) => b[1] - a[1]);
+        const list = entries.map(([name, c]) => `${name} (${c})`).join(", ");
+        return `<div class="tt"><strong>${status}: ${total}</strong><div class="list">${list || "-"}</div></div>`;
+      }
+
+      function drawAllCharts() {
+        const rows = STATE.rows;
+        if (!STATE.measured) STATE.measured = measureCardChrome();
+
+        const layout = computeLayout(STATE.HEADERS.length);
+        document.getElementById("charts").style.setProperty("--cols", layout.cols);
+
+        // kamu bisa tweak tinggi kartu di sini (mis. MIN/MAX/BOOST)
+        const MIN_H = 180, MAX_H = 420, BOOST = 0;
+        const targetH = Math.min(MAX_H, Math.max(MIN_H, layout.chartH + BOOST));
+        document.querySelectorAll(".chart-box").forEach(el => { el.style.height = targetH + "px"; });
+
+        STATE.HEADERS.forEach((header, i) => {
+          const counts = { Berhasil: 0, Gagal: 0, Kosong: 0 };
+          const byInstansi = { Berhasil: {}, Gagal: {}, Kosong: {} };
+
+          rows.forEach(row => {
+            const key = Object.keys(row).find(h => baseName(h) === baseName(header));
+            const raw = ((row?.[key] ?? "") + "").trim().toLowerCase();
+            const st = raw === "berhasil" ? "Berhasil" : raw === "gagal" ? "Gagal" : "Kosong";
+            counts[st]++; const inst = getInstansi(row);
+            byInstansi[st][inst] = (byInstansi[st][inst] || 0) + 1;
+          });
+
+          const total = counts.Berhasil + counts.Gagal + counts.Kosong;
+          const pctB = total ? ((counts.Berhasil / total) * 100).toFixed(1) : 0;
+          const pctG = total ? ((counts.Gagal / total) * 100).toFixed(1) : 0;
+
+          const dt = new google.visualization.DataTable();
+          dt.addColumn('string', 'Status');
+          dt.addColumn('number', 'Jumlah');
+          dt.addColumn({ type: 'string', role: 'tooltip', p: { html: true } });
+          ["Berhasil", "Gagal", "Kosong"].forEach(st => dt.addRow([st, counts[st], makeTooltip(st, counts[st], byInstansi[st])]));
+
+          const options = {
+            legend: { position: 'bottom', alignment: 'center', textStyle: { fontSize: 11 } },
+            slices: { 0: { color: COLORS.Berhasil }, 1: { color: COLORS.Gagal }, 2: { color: COLORS.Kosong } },
+            chartArea: { left: '6%', top: '6%', width: '88%', height: '78%' },
+            tooltip: { isHtml: true },
+          };
+
+          const chart = new google.visualization.PieChart(document.getElementById(`chart_${i}`));
+          chart.draw(dt, options);
+
+          document.getElementById(`summary_${i}`).innerHTML =
+            `Berhasil: ${counts.Berhasil} (${pctB}%) &nbsp; | &nbsp; Gagal: ${counts.Gagal} (${pctG}%)`;
+        });
+      }
+
+      function updateParticipantInfo(data) {
+        const instansiCounts = {};
+        data.forEach(row => {
+          const inst = getInstansi(row);
+          if (inst) instansiCounts[inst] = (instansiCounts[inst] || 0) + 1;
+        });
+        const entries = Object.entries(instansiCounts).sort((a, b) => a[0].localeCompare(b[0]));
+        const total = entries.reduce((s, [, c]) => s + c, 0);
+        document.getElementById("meta").innerHTML = `<strong>Total Partisipan:</strong> ${total}`;
+        document.getElementById("participant-list").innerText = entries.map(([n, c]) => `${n} (${c})`).join(" | ");
+      }
+
+      // ====== derive kolom dari CSV ======
+      function deriveHeadersFromRows(rows) {
+        if (!rows || !rows.length) return [];
+        const seen = new Set(), result = [];
+        Object.keys(rows[0]).forEach(h => {
+          const b = baseName(h);
+          if (!b || isMeta(b) || isCatatan(b)) return;
+          if (seen.has(b)) return;
+          seen.add(b); result.push(b);
+        });
+        return result;
+      }
+
+      function loadDataAndDraw() {
+        Papa.parse(SHEET_CSV_URL, {
+          download: true, header: true, skipEmptyLines: true,
+          complete: function (res) {
+            STATE.rows = res.data || [];
+            STATE.HEADERS = deriveHeadersFromRows(STATE.rows);
+            STATE.LABELS = STATE.HEADERS.map(makeLabelFromHeader);
+            updateParticipantInfo(STATE.rows);
+            buildContainers();
+            drawAllCharts();
+          },
+          error: function (err) {
+            console.error("Parse error:", err);
+            document.getElementById("charts").innerText = "Gagal memuat data.";
+          }
+        });
+      }
+
+      const redraw = () => { buildContainers(); drawAllCharts(); };
+      window.addEventListener("resize", () => requestAnimationFrame(redraw));
+      window.addEventListener("orientationchange", () => setTimeout(() => requestAnimationFrame(redraw), 200));
+
+      google.charts.setOnLoadCallback(loadDataAndDraw);
+    </script>
+  </body>
+</html>
